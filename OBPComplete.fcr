@@ -1,0 +1,219 @@
+/*------------------------------------------
+   calcul1_asynchro.fcr  version 29 nov 13
+ 
+   3 processus de calcul : For, While, Until
+   communication assynchrone entre les processus 
+   la valeur echangee est de type structure t_data {index, value}
+   Iteration sur :
+     - ProcFor transmet le couple (i, i*i)
+     - ProcWhile calcule et transmet le couple (i, racine carre de i*i)
+     - ProcUntil receptionne le couple (i, i)
+ 
+----------------------------------- 
+   Ph. Dhaussy Ensta-Bretagne  
+-------------------------------------------*/
+
+/*________________________________________________________________________________________________
+__________________________________crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ation des diffÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rents types_________________________________ */
+
+
+
+type T_user is union		// identitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© du demandeur
+         ADMIN
+    |    GC_OWNER 
+    |    LC1_OWNER 
+    |    LC2_OWNER 
+end union
+
+type T_target is union 		// ressource accessible
+         GC
+    |    LC1
+    |    LC2
+end union
+
+
+type T_oper is union		// type dÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢opÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ration 
+         READ
+    |    WRITE
+end union
+
+
+type T_req is record		// type de requÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªte
+         id  : 	T_user,
+         target : 	T_target,
+         oper : 	T_oper
+end
+
+
+ const request : T_req is {id= ADMIN, target=LC1, oper=WRITE}
+
+
+/*____________________________________________________________________________________________________
+__________________________________crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©ation des fifo_________________________________________________*/
+
+const FIFO_SIZE  : nat is 10
+
+type fifo  is queue FIFO_SIZE of T_req
+
+
+/*const I_MAX  : nat is 3 
+
+type t_data is record
+	index   : int,    /* value index */
+	value   : int     /* value  */
+end
+ const request : T_req is {id=}
+
+const data1  : t_data is {index = 1, value = 1}
+const data2  : t_data is {index = 2, value = 4}
+const data3  : t_data is {index = 3, value = 9}
+
+// la derniere donnee : ProcFor --> (I_MAX, I_MAX * I_MAX) --> ProcWhile --> (I_MAX, I_MAX) --> ProcUntil
+const last_data_For	: t_data  is {index = I_MAX, value = I_MAX * I_MAX}
+const last_data_While	: t_data  is {index = I_MAX, value = I_MAX}
+
+const SIZE_FIFO  : nat is 5
+type t_fifo is queue SIZE_FIFO of t_data*/
+
+/*====================== GC ================================*/
+
+process GC (&GC_1 : fifo, &toContext:fifo, &fifo_GC_Network :fifo, &fifo_Network_GC:fifo)
+is 
+
+states Start,Sending
+var
+	req : T_req
+init
+	//req := {index = 0, value = 0};
+	to Start
+  
+/*-----------------------*/
+from Start
+	if (empty GC_1) then loop end;
+	/*@ Proc GC: Point d'entree */
+	req := first GC_1;
+	GC_1 := dequeue (GC_1);
+	
+	// A Traiter ====================================
+	to Sending
+
+from Sending
+		//---- envoi de req si fifo destine  network---
+
+	/*@ Proc: Network */
+	fifo_GC_Network := enqueue (fifo_GC_Network, req);
+		to Start
+ 
+ 
+/*====================== Network ================================*/
+
+process Network  ( &fifo_GC_Network : fifo, &fifo_Network_GC : fifo, &fifo_LC1_Network:fifo, &fifo_LC2_Network:fifo, &fifo_Network_LC1:fifo, &fifo_Network_LC2:fifo ) 
+is 
+
+states Start, Sending
+var
+
+	req : T_req	
+init
+
+	to Start
+ 
+/*-----------------------*/
+from Start
+	//----- attente si fifo_GC_Network vide et reception de req  -------				
+	if (empty fifo_GC_Network) then loop end;
+	/*@ While: lire */
+	req := first fifo_GC_Network;
+	fifo_GC_Network := dequeue (fifo_GC_Network);
+	
+	to Sending
+	
+from Sending
+	//---- envoi de req aux diffÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©rents process---
+	
+ 	/*@ While: ecrire */
+	fifo_LC1_Network := enqueue (fifo_LC1_Network, req);
+	fifo_LC2_Network := enqueue (fifo_LC2_Network, req);
+    to Start
+
+//======== proc LC1 ===============
+//-------------------------------------------------
+process LC1 ( &fifo_LC1_Network : fifo, &fifo_Network_LC1 : fifo) 
+is
+  
+states
+    Start
+var
+	req : T_req
+init
+	
+	to Start
+	
+from Start
+
+	//----- attente si fifo_Network_LC1 vide et reception de req  -------				
+	if (empty fifo_LC1_Network) then loop end;
+	/*@ Until: lire */
+	req := first fifo_LC1_Network;
+	fifo_LC1_Network := dequeue (fifo_LC1_Network);
+	
+		to Start
+
+		
+	
+//======== proc LC2 ===============
+//-------------------------------------------------
+process LC2 ( &fifo_LC2_Network : fifo, &fifo_Network_LC2 : fifo) 
+is
+  
+states
+    Start
+var
+	req : T_req
+init
+	
+	to Start
+	
+from Start
+
+	//----- attente si fifo_Network_LC1 vide et reception de req  -------				
+	if (empty fifo_LC2_Network) then loop end;
+	/*@ Until: lire */
+	req := first fifo_LC2_Network;
+	fifo_LC2_Network := dequeue (fifo_LC2_Network);
+	
+		to Start
+ 
+/*======================================================*/
+
+component Comp is
+
+var  
+	GC_1     : fifo,	
+	toContext   : fifo,
+	fifo_GC_Network   : fifo,
+	fifo_Network_GC  : fifo,
+	fifo_LC1_Network   : fifo,
+	fifo_Network_LC1   : fifo,
+	fifo_Network_LC2 : fifo,
+	fifo_LC2_Network   : fifo
+	
+init
+	GC_1 	:= {||};
+	toContext := {||};
+	fifo_GC_Network 	:= {||};
+	fifo_Network_GC := {||};
+	fifo_Network_LC1 	:= {||};
+	fifo_LC1_Network := {||};
+	fifo_Network_LC2 	:= {||};
+	fifo_LC2_Network := {||}
+
+par
+
+	  	GC(&GC_1, &toContext, &fifo_GC_Network, &fifo_Network_GC)
+	 ||	Network( &fifo_GC_Network, &fifo_Network_GC, &fifo_LC1_Network,&fifo_LC2_Network, &fifo_Network_LC1, &fifo_Network_LC2) 
+	 ||	LC1 ( &fifo_LC1_Network, &fifo_Network_LC1) 
+	 || LC2 ( &fifo_LC2_Network, &fifo_Network_LC2) 
+end
+
+Comp
